@@ -1,0 +1,46 @@
+appId: com.timelistmaker.app
+productName: TimelistMaker
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+
+# Drop custom icons in build/icon.ico (Windows) and build/icon.icns (macOS) and uncomment
+# the lines below to brand the installers. Without them, electron-builder falls back to
+# its default Electron icon.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: msi
+      arch: [x64]
+  # icon: build/icon.ico
+  # Placeholder for real code signing — leave unset for unsigned dev builds.
+  # certificateFile: path/to/cert.pfx
+  # certificatePassword: env:WIN_CSC_KEY_PASSWORD
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+  # icon: build/icon.icns
+  # Placeholder for real notarization/signing — leave unset for unsigned dev builds.
+  # identity: null disables signing entirely so unsigned local builds work without a cert.
+  identity: null
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
