@@ -5,13 +5,21 @@ import { LoginSignup } from './screens/LoginSignup'
 import { PostLoginChoice } from './screens/PostLoginChoice'
 import { WorkplaceSetup } from './screens/WorkplaceSetup'
 import { TimelistEditor } from './screens/TimelistEditor'
+import { TopBar } from './components/TopBar'
 import { Spinner } from './components/ui/Spinner'
 
 type Screen = 'postLoginChoice' | 'workplaceSetup' | 'editor'
 
 function AuthenticatedApp(): React.JSX.Element {
-  const { workplaces, priorTimelists, refreshWorkplaces, refreshPriorTimelists, generateFresh, generateFromTemplate } =
-    useTimelist()
+  const {
+    workplaces,
+    priorTimelists,
+    refreshWorkplaces,
+    refreshPriorTimelists,
+    generateFresh,
+    generateFromTemplate,
+    importFromExcelFile
+  } = useTimelist()
   const [screen, setScreen] = useState<Screen | null>(null)
 
   useEffect(() => {
@@ -33,42 +41,56 @@ function AuthenticatedApp(): React.JSX.Element {
     }
   }, [screen, priorTimelists, workplaces])
 
-  if (screen === null) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Spinner className="h-8 w-8 text-indigo-500" />
-      </div>
-    )
+  function renderScreen(): React.JSX.Element {
+    if (screen === null) {
+      return (
+        <div className="flex flex-1 items-center justify-center">
+          <Spinner className="h-8 w-8 text-indigo-500" />
+        </div>
+      )
+    }
+
+    if (screen === 'postLoginChoice') {
+      return (
+        <PostLoginChoice
+          onUseTemplate={async (templateId, month, year) => {
+            await generateFromTemplate(templateId, month, year)
+            setScreen('editor')
+          }}
+          onStartFromScratch={() => setScreen('workplaceSetup')}
+          onImportFromFile={async (buffer) => {
+            const result = await importFromExcelFile(buffer)
+            if (!result.error) setScreen('editor')
+            return result
+          }}
+        />
+      )
+    }
+
+    if (screen === 'workplaceSetup') {
+      return (
+        <WorkplaceSetup
+          onContinue={(month, year) => {
+            generateFresh(month, year)
+            setScreen('editor')
+          }}
+        />
+      )
+    }
+
+    return <TimelistEditor onBackToWorkplaces={() => setScreen('workplaceSetup')} />
   }
 
-  if (screen === 'postLoginChoice') {
-    return (
-      <PostLoginChoice
-        onUseTemplate={async (templateId, month, year) => {
-          await generateFromTemplate(templateId, month, year)
-          setScreen('editor')
-        }}
-        onStartFromScratch={() => setScreen('workplaceSetup')}
-      />
-    )
-  }
-
-  if (screen === 'workplaceSetup') {
-    return (
-      <WorkplaceSetup
-        onContinue={(month, year) => {
-          generateFresh(month, year)
-          setScreen('editor')
-        }}
-      />
-    )
-  }
-
-  return <TimelistEditor onBackToWorkplaces={() => setScreen('workplaceSetup')} />
+  return (
+    <div className="flex min-h-screen flex-col">
+      <TopBar onHome={() => setScreen(null)} />
+      {renderScreen()}
+    </div>
+  )
 }
 
 function Root(): React.JSX.Element {
-  const { user, loading, signOut } = useAuth()
+  const { user, loading } = useAuth()
 
   if (loading) {
     return (
@@ -82,15 +104,7 @@ function Root(): React.JSX.Element {
 
   return (
     <TimelistProvider>
-      <div className="relative min-h-screen">
-        <button
-          className="absolute right-4 top-4 z-10 text-xs text-slate-400 hover:underline"
-          onClick={signOut}
-        >
-          Sign out ({user.email})
-        </button>
-        <AuthenticatedApp />
-      </div>
+      <AuthenticatedApp />
     </TimelistProvider>
   )
 }

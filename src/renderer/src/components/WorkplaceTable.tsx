@@ -1,14 +1,17 @@
 import type { WorkplaceTableData } from '@shared/domain'
 import { useTimelist } from '../context/TimelistContext'
+import { Button } from './ui/Button'
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const PATTERN_SOURCE_DAY_COUNT = 7
 
 interface WorkplaceTableProps {
   table: WorkplaceTableData
 }
 
 export function WorkplaceTable({ table }: WorkplaceTableProps): React.JSX.Element {
-  const { updateRowTime, updateRowTotalHours, updateRowDate, renameWorkplaceById } = useTimelist()
+  const { updateRowTime, updateRowTotalHours, updateRowDate, renameWorkplaceById, applyWeekPatternToMonth } =
+    useTimelist()
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -22,10 +25,23 @@ export function WorkplaceTable({ table }: WorkplaceTableProps): React.JSX.Elemen
             }
           }}
         />
-        <span className="text-sm font-medium text-slate-600">
-          Subtotal: {table.subtotalHours.toFixed(2)} h
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-slate-600">
+            Subtotal: {table.subtotalHours.toFixed(2)} h
+          </span>
+          <Button
+            variant="secondary"
+            className="px-2 py-1 text-xs"
+            onClick={() => applyWeekPatternToMonth(table.workplace.id)}
+          >
+            Repeat week 1 for rest of month
+          </Button>
+        </div>
       </div>
+      <p className="border-b border-slate-100 bg-slate-50 px-4 py-1.5 text-xs text-slate-400">
+        Fill in the first 7 days below, then click "Repeat week 1 for rest of month" to apply that
+        weekly pattern to the rest of the month.
+      </p>
 
       <div className="max-h-[420px] overflow-y-auto">
         <table className="w-full text-sm">
@@ -40,13 +56,14 @@ export function WorkplaceTable({ table }: WorkplaceTableProps): React.JSX.Elemen
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((row) => {
+            {table.rows.map((row, index) => {
               const dateObj = new Date(`${row.date}T00:00:00`)
               const special = row.isWeekend || row.isHoliday
+              const isPatternBoundary = index === PATTERN_SOURCE_DAY_COUNT
               return (
                 <tr
                   key={row.date}
-                  className={`border-t border-slate-100 ${special ? 'bg-slate-50 text-slate-400' : ''}`}
+                  className={`border-t ${isPatternBoundary ? 'border-t-2 border-indigo-200' : 'border-slate-100'} ${special ? 'bg-slate-50 text-slate-400' : ''}`}
                 >
                   <td className="px-4 py-1.5">
                     <input

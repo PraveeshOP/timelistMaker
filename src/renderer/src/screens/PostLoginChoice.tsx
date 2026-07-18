@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTimelist } from '../context/TimelistContext'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -21,11 +21,13 @@ const MONTH_NAMES = [
 interface PostLoginChoiceProps {
   onUseTemplate: (templateTimelistId: string, month: number, year: number) => void
   onStartFromScratch: () => void
+  onImportFromFile: (buffer: ArrayBuffer) => Promise<{ error?: string }>
 }
 
 export function PostLoginChoice({
   onUseTemplate,
-  onStartFromScratch
+  onStartFromScratch,
+  onImportFromFile
 }: PostLoginChoiceProps): React.JSX.Element {
   const { priorTimelists } = useTimelist()
   const mostRecent = priorTimelists[0]
@@ -41,6 +43,24 @@ export function PostLoginChoice({
   const [month, setMonth] = useState(defaultTarget.month)
   const [year, setYear] = useState(defaultTarget.year)
   const [showTemplateForm, setShowTemplateForm] = useState(false)
+
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [dragActive, setDragActive] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleFile(file: File): Promise<void> {
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      setImportError('Please choose a .xlsx file.')
+      return
+    }
+    setImportError(null)
+    setImporting(true)
+    const buffer = await file.arrayBuffer()
+    const result = await onImportFromFile(buffer)
+    setImporting(false)
+    if (result.error) setImportError(result.error)
+  }
 
   return (
     <div className="mx-auto max-w-xl px-4 py-16">
@@ -105,6 +125,48 @@ export function PostLoginChoice({
           <Button className="mt-4" variant="secondary" onClick={onStartFromScratch}>
             Start from scratch
           </Button>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-medium text-slate-800">Import from an Excel file</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Drag and drop a previously exported timesheet, or choose one from your computer.
+          </p>
+
+          <div
+            className={`mt-4 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center text-sm transition-colors ${
+              dragActive ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300'
+            }`}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDragActive(true)
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragActive(false)
+              const file = e.dataTransfer.files[0]
+              if (file) handleFile(file)
+            }}
+          >
+            <p className="text-slate-500">Drop an .xlsx file here</p>
+            <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+              {importing ? 'Importing…' : 'Browse…'}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleFile(file)
+                e.target.value = ''
+              }}
+            />
+          </div>
+
+          {importError && <p className="mt-2 text-sm text-red-600">{importError}</p>}
         </div>
       </div>
     </div>

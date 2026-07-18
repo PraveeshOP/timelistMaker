@@ -6,9 +6,10 @@ import {
   useState,
   type ReactNode
 } from 'react'
-import type { GeneratedTimelist, Timelist, Workplace } from '@shared/domain'
+import type { GeneratedTimelist, Timelist, Workplace, WorkplaceTableData } from '@shared/domain'
 import { getHolidayName, isWeekend as computeIsWeekend } from '@shared/holidays'
 import {
+  applyFirstWeekPattern,
   applyTimeEdit,
   generateFreshTimelist,
   generateTimelistFromTemplate,
@@ -24,6 +25,7 @@ import {
   saveTimelistRows,
   upsertTimelist
 } from '../lib/data'
+import { parseTimesheetWorkbook } from '../lib/excelImport'
 import { useAuth } from './AuthContext'
 
 interface TimelistContextValue {
@@ -40,6 +42,7 @@ interface TimelistContextValue {
   removeWorkplace: (id: string) => Promise<void>
   generateFresh: (month: number, year: number) => void
   generateFromTemplate: (templateTimelistId: string, month: number, year: number) => Promise<void>
+  importFromExcelFile: (buffer: ArrayBuffer) => Promise<{ error?: string }>
   updateRowTime: (
     workplaceId: string,
     date: string,
@@ -48,6 +51,7 @@ interface TimelistContextValue {
   ) => void
   updateRowTotalHours: (workplaceId: string, date: string, hours: number) => void
   updateRowDate: (workplaceId: string, oldDate: string, newDate: string) => void
+  applyWeekPatternToMonth: (workplaceId: string) => void
   save: () => Promise<{ error?: string }>
 }
 
@@ -82,6 +86,13 @@ export function TimelistProvider({ children }: { children: ReactNode }): React.J
       if (!user || !name.trim()) return
       const workplace = await createWorkplace(user.id, name.trim())
       setWorkplaces((prev) => [...prev, workplace])
+      // If a timelist is already generated, append a blank table for the new
+      // workplace immediately instead of requiring a full regeneration.
+      setGenerated((prev) => {
+        if (!prev) return prev
+        const newTable = generateFreshTimelist(prev.month, prev.year, [workplace]).tables[0]
+        return recalculateTotals({ ...prev, tables: [...prev.tables, newTable] })
+      })
     },
     [user]
   )
@@ -119,6 +130,54 @@ export function TimelistProvider({ children }: { children: ReactNode }): React.J
       }
     },
     [workplaces]
+  )
+
+  const importFromExcelFile = useCallback(
+    async (buffer: ArrayBuffer): Promise<{ error?: string }> => {
+      if (!user) return { error: 'Not signed in.' }
+
+      const parsed = await parseTimesheetWorkbook(buffer)
+      if (!parsed.ok) return { error: parsed.error }
+
+      setLoading(true)
+      try {
+        const knownByName = new Map(workplaces.map((w) => [w.name.toLowerCase(), w]))
+        const newlyCreated: Workplace[] = []
+        const tables: WorkplaceTableData[] = []
+
+        for (const parsedWorkplace of parsed.data.workplaces) {
+          const key = parsedWorkplace.name.toLowerCase()
+          let workplace = knownByName.get(key)
+          if (!workplace) {
+            workplace = await createWorkplace(user.id, parsedWorkplace.name)
+            knownByName.set(key, workplace)
+            newlyCreated.push(workplace)
+          }
+          const rows = parsedWorkplace.rows.map((row) => ({ ...row, workplaceId: workplace!.id }))
+          tables.push({ workplace, rows, subtotalHours: 0 })
+        }
+
+        if (newlyCreated.length > 0) {
+          setWorkplaces((prev) => [...prev, ...newlyCreated])
+        }
+
+        setCurrentTimelistId(null)
+        setGenerated(
+          recalculateTotals({
+            month: parsed.data.month,
+            year: parsed.data.year,
+            tables,
+            grandTotalHours: 0
+          })
+        )
+        return {}
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) }
+      } finally {
+        setLoading(false)
+      }
+    },
+    [user, workplaces]
   )
 
   const updateRowTime = useCallback(
@@ -175,6 +234,16 @@ export function TimelistProvider({ children }: { children: ReactNode }): React.J
     })
   }, [])
 
+  const applyWeekPatternToMonth = useCallback((workplaceId: string) => {
+    setGenerated((prev) => {
+      if (!prev) return prev
+      const tables = prev.tables.map((table) =>
+        table.workplace.id === workplaceId ? applyFirstWeekPattern(table) : table
+      )
+      return recalculateTotals({ ...prev, tables })
+    })
+  }, [])
+
   const save = useCallback(async (): Promise<{ error?: string }> => {
     if (!user || !generated) return { error: 'Nothing to save.' }
     setSaving(true)
@@ -207,9 +276,11 @@ export function TimelistProvider({ children }: { children: ReactNode }): React.J
       removeWorkplace,
       generateFresh,
       generateFromTemplate,
+      importFromExcelFile,
       updateRowTime,
       updateRowTotalHours,
       updateRowDate,
+      applyWeekPatternToMonth,
       save
     }),
     [
@@ -226,9 +297,11 @@ export function TimelistProvider({ children }: { children: ReactNode }): React.J
       removeWorkplace,
       generateFresh,
       generateFromTemplate,
+      importFromExcelFile,
       updateRowTime,
       updateRowTotalHours,
       updateRowDate,
+      applyWeekPatternToMonth,
       save
     ]
   )

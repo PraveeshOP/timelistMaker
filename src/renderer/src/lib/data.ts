@@ -12,6 +12,11 @@ function fromWorkplaceRow(row: WorkplaceRow): Workplace {
   return { id: row.id, userId: row.user_id, name: row.name, createdAt: row.created_at }
 }
 
+export async function updateUserFullName(userId: string, fullName: string): Promise<void> {
+  const { error } = await supabase.from('users').update({ full_name: fullName }).eq('id', userId)
+  if (error) throw error
+}
+
 export async function fetchWorkplaces(userId: string): Promise<Workplace[]> {
   const { data, error } = await supabase
     .from('workplaces')

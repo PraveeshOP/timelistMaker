@@ -8,6 +8,7 @@ import {
   type ReactNode
 } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { updateUserFullName } from '../lib/data'
 import { ipc } from '../lib/ipc'
 
 export interface AppUser {
@@ -28,6 +29,7 @@ interface AuthContextValue {
   ) => Promise<{ error?: string }>
   signInWithGoogle: () => Promise<{ error?: string }>
   signOut: () => Promise<void>
+  updateFullName: (fullName: string) => Promise<{ error?: string }>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -105,6 +107,20 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       },
       async signOut() {
         await supabase.auth.signOut()
+      },
+      async updateFullName(fullName: string) {
+        const { error } = await supabase.auth.updateUser({ data: { full_name: fullName } })
+        if (error) return { error: error.message }
+        const userId = session?.user.id
+        if (userId) {
+          try {
+            await updateUserFullName(userId, fullName)
+          } catch {
+            // Auth metadata (the source of truth for the app) is already updated —
+            // this mirror write to public.users is best-effort.
+          }
+        }
+        return {}
       }
     }),
     [session, loading]

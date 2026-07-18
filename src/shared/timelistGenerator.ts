@@ -107,6 +107,45 @@ export function generateTimelistFromTemplate(
   return { month, year, tables, grandTotalHours: 0 }
 }
 
+const PATTERN_SOURCE_DAY_COUNT = 7
+
+function weekdayPatternFromRows(rows: TimelistRow[]): Map<number, WeekdayPattern> {
+  const pattern = new Map<number, WeekdayPattern>()
+  for (const row of rows) {
+    if (!row.startTime || !row.stopTime) continue
+    const weekday = getDay(new Date(`${row.date}T00:00:00`))
+    pattern.set(weekday, { startTime: row.startTime, stopTime: row.stopTime })
+  }
+  return pattern
+}
+
+/** Repeats the first calendar week's (days 1-7, which cover every weekday exactly once)
+ *  filled-in start/stop pattern across the rest of the month for one workplace, so the user
+ *  only has to fill in a single week by hand. Weekend/holiday rows are left untouched, and
+ *  already-filled rows within the source week are left as-is. */
+export function applyFirstWeekPattern(table: WorkplaceTableData): WorkplaceTableData {
+  const sourceRows = table.rows.slice(0, PATTERN_SOURCE_DAY_COUNT)
+  const pattern = weekdayPatternFromRows(sourceRows)
+  if (pattern.size === 0) return table
+
+  const rows = table.rows.map((row, index) => {
+    if (index < PATTERN_SOURCE_DAY_COUNT) return row
+    if (row.isWeekend || row.isHoliday) return row
+
+    const weekdayPattern = pattern.get(getDay(new Date(`${row.date}T00:00:00`)))
+    if (!weekdayPattern) return row
+
+    return {
+      ...row,
+      startTime: weekdayPattern.startTime,
+      stopTime: weekdayPattern.stopTime,
+      totalHours: computeHours(weekdayPattern.startTime, weekdayPattern.stopTime)
+    }
+  })
+
+  return { ...table, rows }
+}
+
 /** Recomputes totalHours (from start/stop, unless explicitly overridden), subtotals, and grand total. */
 export function recalculateTotals(timelist: GeneratedTimelist): GeneratedTimelist {
   const tables = timelist.tables.map((table) => {
