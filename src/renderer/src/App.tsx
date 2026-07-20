@@ -11,15 +11,8 @@ import { Spinner } from './components/ui/Spinner'
 type Screen = 'postLoginChoice' | 'workplaceSetup' | 'editor'
 
 function AuthenticatedApp(): React.JSX.Element {
-  const {
-    workplaces,
-    priorTimelists,
-    refreshWorkplaces,
-    refreshPriorTimelists,
-    generateFresh,
-    generateFromTemplate,
-    importFromExcelFile
-  } = useTimelist()
+  const { refreshWorkplaces, refreshPriorTimelists, generateFresh, generateFromTemplate, importFromExcelFile } =
+    useTimelist()
   const [screen, setScreen] = useState<Screen | null>(null)
 
   useEffect(() => {
@@ -32,14 +25,8 @@ function AuthenticatedApp(): React.JSX.Element {
 
   useEffect(() => {
     if (screen !== null) return
-    if (priorTimelists.length === 0 && workplaces.length === 0) {
-      setScreen('workplaceSetup')
-    } else if (priorTimelists.length > 0) {
-      setScreen('postLoginChoice')
-    } else {
-      setScreen('workplaceSetup')
-    }
-  }, [screen, priorTimelists, workplaces])
+    setScreen('postLoginChoice')
+  }, [screen])
 
   function renderScreen(): React.JSX.Element {
     if (screen === null) {

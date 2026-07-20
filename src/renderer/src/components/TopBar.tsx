@@ -1,48 +1,48 @@
-import { useEffect, useRef, useState } from 'react'
-import { useAuth } from '../context/AuthContext'
-import { Button } from './ui/Button'
-import { Input } from './ui/Input'
+import { useEffect, useRef, useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
 
 interface TopBarProps {
-  onHome: () => void
+  onHome: () => void;
 }
 
 export function TopBar({ onHome }: TopBarProps): React.JSX.Element {
-  const { user, signOut, updateFullName } = useAuth()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [editingName, setEditingName] = useState(false)
-  const [nameDraft, setNameDraft] = useState(user?.fullName ?? '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const { user, signOut, updateFullName } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(user?.fullName ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent): void {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
-        setEditingName(false)
+        setMenuOpen(false);
+        setEditingName(false);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   function startEditing(): void {
-    setNameDraft(user?.fullName ?? '')
-    setError(null)
-    setEditingName(true)
+    setNameDraft(user?.fullName ?? "");
+    setError(null);
+    setEditingName(true);
   }
 
   async function handleSaveName(): Promise<void> {
-    if (!nameDraft.trim()) return
-    setSaving(true)
-    setError(null)
-    const result = await updateFullName(nameDraft.trim())
-    setSaving(false)
-    if (result.error) setError(result.error)
+    if (!nameDraft.trim()) return;
+    setSaving(true);
+    setError(null);
+    const result = await updateFullName(nameDraft.trim());
+    setSaving(false);
+    if (result.error) setError(result.error);
     else {
-      setEditingName(false)
-      setMenuOpen(false)
+      setEditingName(false);
+      setMenuOpen(false);
     }
   }
 
@@ -57,7 +57,12 @@ export function TopBar({ onHome }: TopBarProps): React.JSX.Element {
         onClick={() => setMenuOpen((v) => !v)}
       >
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <path
+            d="M3 5h14M3 10h14M3 15h14"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
         </svg>
       </button>
 
@@ -66,11 +71,11 @@ export function TopBar({ onHome }: TopBarProps): React.JSX.Element {
           <button
             className="block w-full px-4 py-2 text-left hover:bg-slate-50"
             onClick={() => {
-              onHome()
-              setMenuOpen(false)
+              onHome();
+              setMenuOpen(false);
             }}
           >
-            ← Home
+            🏠 Home
           </button>
 
           <div className="border-t border-slate-100 px-4 py-2">
@@ -89,17 +94,25 @@ export function TopBar({ onHome }: TopBarProps): React.JSX.Element {
                     onClick={handleSaveName}
                     disabled={saving}
                   >
-                    {saving ? 'Saving…' : 'Save'}
+                    {saving ? "Saving…" : "Save"}
                   </Button>
-                  <button className="hover:underline" onClick={() => setEditingName(false)}>
+                  <button
+                    className="hover:underline"
+                    onClick={() => setEditingName(false)}
+                  >
                     Cancel
                   </button>
                 </div>
                 {error && <p className="text-red-500">{error}</p>}
               </div>
             ) : (
-              <button className="text-left hover:underline" onClick={startEditing}>
-                {user?.fullName ? `Edit name (${user.fullName})` : 'Add your name'}
+              <button
+                className="text-left hover:underline"
+                onClick={startEditing}
+              >
+                {user?.fullName
+                  ? `Edit name (${user.fullName})`
+                  : "Add your name"}
               </button>
             )}
           </div>
@@ -107,8 +120,8 @@ export function TopBar({ onHome }: TopBarProps): React.JSX.Element {
           <button
             className="block w-full border-t border-slate-100 px-4 py-2 text-left hover:bg-slate-50"
             onClick={() => {
-              signOut()
-              setMenuOpen(false)
+              signOut();
+              setMenuOpen(false);
             }}
           >
             Sign out ({user?.email})
@@ -116,5 +129,5 @@ export function TopBar({ onHome }: TopBarProps): React.JSX.Element {
         </div>
       )}
     </div>
-  )
+  );
 }
