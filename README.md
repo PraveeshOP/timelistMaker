@@ -1,4 +1,4 @@
-# TimelistMaker
+# Timelist Maker
 
 Cross-platform desktop app for tracking work hours across multiple workplaces and
 exporting monthly timesheets to Excel. Built with Electron, TypeScript, React,
@@ -105,6 +105,38 @@ distribution:
 Custom app icons: drop `icon.icns` (mac) and `icon.ico` (win) into `build/` and
 uncomment the corresponding `icon:` lines in `electron-builder.yml`. Without them,
 electron-builder falls back to the default Electron icon.
+
+## 5. CI/CD (GitHub Actions)
+
+Two workflows live in `.github/workflows/`:
+
+- **`ci.yml`** — runs `typecheck` + `build` on every push/PR to `main`. Doesn't need any
+  secrets (bundling doesn't execute the app, so missing Supabase config can't fail it).
+- **`release.yml`** — on every pushed tag matching `v*.*.*` (or a manual run), builds on
+  both a `macos-latest` and a `windows-latest` runner (electron-builder can't cross-build
+  a `.dmg` from Linux/Windows) and publishes the resulting `.dmg`/`.exe`/`.msi` straight
+  to a GitHub Release matching that tag, via electron-builder's built-in GitHub publish
+  provider (`publish: { provider: github }` in `electron-builder.yml`).
+
+**One-time setup** — add these under the repo's **Settings → Secrets and variables →
+Actions**:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+(the same values from your `.env` — these get baked into the release build, since that's
+the app your users will actually run). `GITHUB_TOKEN` is provided automatically; no setup
+needed.
+
+**Cutting a release:**
+
+```bash
+npm version patch   # bumps package.json's version and creates a matching git commit + tag
+git push && git push --tags
+```
+
+That tag push triggers `release.yml`, which builds and attaches the installers to a new
+GitHub Release. These are the same **unsigned** builds described above — first-launch
+Gatekeeper/SmartScreen warnings apply the same way as a local build.
 
 ## How it works
 
