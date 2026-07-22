@@ -10,12 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  build-mac:
+    runs-on: macos-latest
     env:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
@@ -33,9 +29,31 @@ jobs:
       - run: npm run build
 
       - name: Package and publish (macOS)
-        if: runner.os == 'macOS'
         run: npx electron-builder --mac dmg --publish always
 
+  build-win:
+    runs-on: windows-latest
+    # Runs after build-mac so the two jobs never race to create/update the same GitHub
+    # Release at once — build-mac creates it, build-win just adds its assets to it.
+    # `if: always()` keeps this running even if build-mac failed, so one platform's
+    # build issue doesn't block the other's.
+    needs: build-mac
+    if: always()
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
       - name: Package and publish (Windows)
-        if: runner.os == 'Windows'
         run: npx electron-builder --win nsis --publish always
