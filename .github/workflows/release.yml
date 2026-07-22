@@ -38,4 +38,4 @@ jobs:
 
       - name: Package and publish (Windows)
         if: runner.os == 'Windows'
-        run: npx electron-builder --win nsis msi --publish always
+        run: npx electron-builder --win nsis --publish always

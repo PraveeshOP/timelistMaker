@@ -6,7 +6,7 @@ and Supabase.
 
 ## Stack
 
-- **Electron** (packaged with electron-builder for Windows `.exe`/`.msi` and macOS `.dmg`)
+- **Electron** (packaged with electron-builder for Windows `.exe` and macOS `.dmg`)
 - **TypeScript** everywhere (main, preload, renderer)
 - **React** renderer UI, built with **Vite** via **electron-vite**
 - **Tailwind CSS** for styling
@@ -84,7 +84,7 @@ the main/preload processes.
 
 ```bash
 npm run dist:mac    # macOS .dmg (universal: x64 + arm64)
-npm run dist:win    # Windows .exe (NSIS) + .msi
+npm run dist:win    # Windows .exe (NSIS)
 ```
 
 Both scripts run `npm run build` first (typecheck + electron-vite build) and then
@@ -114,7 +114,7 @@ Two workflows live in `.github/workflows/`:
   secrets (bundling doesn't execute the app, so missing Supabase config can't fail it).
 - **`release.yml`** — on every pushed tag matching `v*.*.*` (or a manual run), builds on
   both a `macos-latest` and a `windows-latest` runner (electron-builder can't cross-build
-  a `.dmg` from Linux/Windows) and publishes the resulting `.dmg`/`.exe`/`.msi` straight
+  a `.dmg` from Linux/Windows) and publishes the resulting `.dmg`/`.exe` straight
   to a GitHub Release matching that tag, via electron-builder's built-in GitHub publish
   provider (`publish: { provider: github }` in `electron-builder.yml`).
 

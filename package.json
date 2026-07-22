@@ -8,10 +8,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
-    "dist:win": "npm run build && electron-builder --win nsis msi",
+    "dist:win": "npm run build && electron-builder --win nsis",
     "dist:mac": "npm run build && electron-builder --mac dmg"
   },
-  "author": "",
+  "author": "Prabesh Khatri",
   "license": "UNLICENSED",
   "type": "module",
   "private": true,

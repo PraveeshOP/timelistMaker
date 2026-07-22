@@ -20,8 +20,10 @@ win:
   target:
     - target: nsis
       arch: [x64]
-    - target: msi
-      arch: [x64]
+  # MSI is disabled: electron-builder/WiX4's MSI template references an icon resource
+  # that's only generated when a real custom icon (win.icon, above) is configured — with
+  # none set, the WiX linker fails with "identifier 'Icon:...' could not be found". Add
+  # build/icon.ico and re-enable `- target: msi` (and uncomment win.icon) if MSI is wanted.
   # icon: build/icon.ico
   # Placeholder for real code signing — leave unset for unsigned dev builds.
   # certificateFile: path/to/cert.pfx
