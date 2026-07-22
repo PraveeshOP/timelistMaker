@@ -6,16 +6,17 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
+  # Each platform job only builds — it does NOT publish. electron-builder's own GitHub
+  # publisher proved unreliable for this exact setup (two separate processes publishing
+  # to the same release): it logged successful uploads that never actually landed on the
+  # release, across several different configurations. Building an installer per job and
+  # handing the actual release creation to a single later job avoids that entirely.
   build-mac:
     runs-on: macos-latest
     env:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,21 +29,19 @@ jobs:
 
       - run: npm run build
 
-      - name: Package and publish (macOS)
-        run: npx electron-builder --mac dmg --publish always
+      - run: npx electron-builder --mac dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-installer
+          path: release/*.dmg
+          if-no-files-found: error
 
   build-win:
     runs-on: windows-latest
-    # Runs after build-mac so the two jobs never race to create/update the same GitHub
-    # Release at once — build-mac creates it, build-win just adds its assets to it.
-    # `if: always()` keeps this running even if build-mac failed, so one platform's
-    # build issue doesn't block the other's.
-    needs: build-mac
-    if: always()
     env:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,5 +54,36 @@ jobs:
 
       - run: npm run build
 
-      - name: Package and publish (Windows)
-        run: npx electron-builder --win nsis --publish always
+      - run: npx electron-builder --win nsis
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          # Excludes the NSIS uninstaller stub electron-builder also drops in release/ —
+          # only the actual Setup.exe should ship as a release asset.
+          path: |
+            release/*.exe
+            !release/*uninstaller*.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [build-mac, build-win]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release with both installers
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            artifacts/mac-installer/*.dmg \
+            artifacts/windows-installer/*.exe \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

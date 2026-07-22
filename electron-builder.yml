@@ -7,18 +7,11 @@ files:
   - out/**/*
   - package.json
 
-# Lets `electron-builder --publish always` (used by .github/workflows/release.yml)
-# upload installers straight to a GitHub Release matching the pushed git tag. Relies
-# on electron-builder auto-detecting owner/repo from the checked-out git remote.
-#
-# releaseType: release — required for a multi-job release (macOS + Windows publishing
-# to the same tag): electron-builder can't reliably find a *draft* release created by
-# a separate prior invocation, so each job ends up creating its own duplicate draft
-# instead of adding to one. A published release doesn't have that ambiguity — the
-# second job's publish call finds it by tag and adds its assets to it correctly.
-publish:
-  provider: github
-  releaseType: release
+# No `publish` config here on purpose: .github/workflows/release.yml builds each
+# platform's installer as a plain (non-publishing) build, then a separate final job
+# creates the GitHub Release and uploads both installers in one atomic step via the
+# `gh` CLI. electron-builder's own GitHub publisher proved unreliable across two
+# separate processes targeting the same release — see release.yml for the details.
 
 # Drop custom icons in build/icon.ico (Windows) and build/icon.icns (macOS) and uncomment
 # the lines below to brand the installers. Without them, electron-builder falls back to
