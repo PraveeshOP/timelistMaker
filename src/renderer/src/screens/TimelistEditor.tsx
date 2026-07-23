@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { useTimelist } from '../context/TimelistContext'
 import { WorkplaceTable } from '../components/WorkplaceTable'
+import { CalendarView } from '../components/CalendarView'
 import { ExportBar } from '../components/ExportBar'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
+
+type ViewMode = 'tables' | 'calendar'
 
 const MONTH_NAMES = [
   'January',
@@ -29,6 +32,7 @@ export function TimelistEditor({ onBackToWorkplaces }: TimelistEditorProps): Rea
   const [addingWorkplace, setAddingWorkplace] = useState(false)
   const [newWorkplaceName, setNewWorkplaceName] = useState('')
   const [adding, setAdding] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>('tables')
 
   async function handleAddWorkplace(): Promise<void> {
     if (!newWorkplaceName.trim()) return
@@ -56,44 +60,70 @@ export function TimelistEditor({ onBackToWorkplaces }: TimelistEditorProps): Rea
           </h1>
           <p className="text-sm text-slate-500">Edit any field — dates, times, hours, or workplace names.</p>
         </div>
-        <button className="text-sm text-slate-500 hover:underline" onClick={onBackToWorkplaces}>
-          Manage workplaces
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="flex rounded-lg border border-slate-200 p-0.5 text-sm">
+            <button
+              className={`rounded px-3 py-1 ${
+                viewMode === 'tables' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'
+              }`}
+              onClick={() => setViewMode('tables')}
+            >
+              Tables
+            </button>
+            <button
+              className={`rounded px-3 py-1 ${
+                viewMode === 'calendar' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'
+              }`}
+              onClick={() => setViewMode('calendar')}
+            >
+              Calendar
+            </button>
+          </div>
+          <button className="text-sm text-slate-500 hover:underline" onClick={onBackToWorkplaces}>
+            Manage workplaces
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-        {generated.tables.map((table) => (
-          <WorkplaceTable key={table.workplace.id} table={table} />
-        ))}
-
-        {addingWorkplace ? (
-          <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white p-4">
-            <Input
-              placeholder="e.g. Privatemegeleren Park"
-              value={newWorkplaceName}
-              onChange={(e) => setNewWorkplaceName(e.target.value)}
-              autoFocus
-            />
-            <Button onClick={handleAddWorkplace} disabled={adding}>
-              {adding ? 'Adding…' : 'Add'}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setAddingWorkplace(false)
-                setNewWorkplaceName('')
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
+        {viewMode === 'calendar' ? (
+          <CalendarView generated={generated} />
         ) : (
-          <button
-            className="w-full rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500 hover:border-indigo-300 hover:text-indigo-600"
-            onClick={() => setAddingWorkplace(true)}
-          >
-            + Add workplace
-          </button>
+          <>
+            {generated.tables.map((table) => (
+              <WorkplaceTable key={table.workplace.id} table={table} />
+            ))}
+
+            {addingWorkplace ? (
+              <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white p-4">
+                <Input
+                  placeholder="e.g. Privatemegeleren Park"
+                  value={newWorkplaceName}
+                  onChange={(e) => setNewWorkplaceName(e.target.value)}
+                  autoFocus
+                />
+                <Button onClick={handleAddWorkplace} disabled={adding}>
+                  {adding ? 'Adding…' : 'Add'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setAddingWorkplace(false)
+                    setNewWorkplaceName('')
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <button
+                className="w-full rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500 hover:border-indigo-300 hover:text-indigo-600"
+                onClick={() => setAddingWorkplace(true)}
+              >
+                + Add workplace
+              </button>
+            )}
+          </>
         )}
       </main>
 
