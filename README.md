@@ -52,11 +52,17 @@ firebase.json      # Points the Firebase CLI at firestore.rules for deployment
    VITE_FIREBASE_APP_ID=...
    ```
 
+   > The `VITE_` prefix is required — Vite only exposes env vars with that exact
+   > prefix to client-side code (`import.meta.env`). Anything else silently
+   > resolves to `undefined` in the browser bundle, even if it's set correctly
+   > in `.env` or in Vercel's dashboard.
+
 ## 2. Google sign-in — authorized domains
 
 Firebase's Google sign-in (`signInWithPopup`) only works from domains you've told it
 about. Under **Authentication → Settings → Authorized domains**, add every domain the
 app will actually be served from:
+
 - `localhost` (usually already there by default, covers `npm run dev`)
 - `your-app.vercel.app` (production, once deployed)
 - any Vercel preview-deployment domain pattern you want to support
