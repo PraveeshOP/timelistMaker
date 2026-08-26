@@ -97,16 +97,23 @@ export function TimelistProvider({ children }: { children: ReactNode }): React.J
     [user]
   )
 
-  const renameWorkplaceById = useCallback(async (id: string, name: string) => {
-    if (!name.trim()) return
-    await renameWorkplace(id, name.trim())
-    setWorkplaces((prev) => prev.map((w) => (w.id === id ? { ...w, name: name.trim() } : w)))
-  }, [])
+  const renameWorkplaceById = useCallback(
+    async (id: string, name: string) => {
+      if (!user || !name.trim()) return
+      await renameWorkplace(user.id, id, name.trim())
+      setWorkplaces((prev) => prev.map((w) => (w.id === id ? { ...w, name: name.trim() } : w)))
+    },
+    [user]
+  )
 
-  const removeWorkplace = useCallback(async (id: string) => {
-    await deleteWorkplace(id)
-    setWorkplaces((prev) => prev.filter((w) => w.id !== id))
-  }, [])
+  const removeWorkplace = useCallback(
+    async (id: string) => {
+      if (!user) return
+      await deleteWorkplace(user.id, id)
+      setWorkplaces((prev) => prev.filter((w) => w.id !== id))
+    },
+    [user]
+  )
 
   const generateFresh = useCallback(
     (month: number, year: number) => {
@@ -118,9 +125,10 @@ export function TimelistProvider({ children }: { children: ReactNode }): React.J
 
   const generateFromTemplate = useCallback(
     async (templateTimelistId: string, month: number, year: number) => {
+      if (!user) return
       setLoading(true)
       try {
-        const templateEntries = await fetchTimeEntriesForTimelist(templateTimelistId)
+        const templateEntries = await fetchTimeEntriesForTimelist(user.id, templateTimelistId)
         setCurrentTimelistId(null)
         setGenerated(
           recalculateTotals(generateTimelistFromTemplate(month, year, workplaces, templateEntries))
@@ -129,7 +137,7 @@ export function TimelistProvider({ children }: { children: ReactNode }): React.J
         setLoading(false)
       }
     },
-    [workplaces]
+    [user, workplaces]
   )
 
   const importFromExcelFile = useCallback(

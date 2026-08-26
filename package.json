@@ -13,9 +13,9 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@supabase/supabase-js": "^2.110.7",
     "date-fns": "^4.4.0",
     "exceljs": "^4.4.0",
+    "firebase": "^12.18.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

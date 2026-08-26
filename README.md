@@ -1,13 +1,13 @@
 # Timelist Maker
 
 Web app for tracking work hours across multiple workplaces and exporting monthly
-timesheets to Excel. Built with TypeScript, React, Vite, and Supabase.
+timesheets to Excel. Built with TypeScript, React, Vite, and Firebase.
 
 ## Stack
 
 - **React** + **TypeScript**, built with **Vite**
 - **Tailwind CSS** for styling
-- **Supabase** for authentication (email/password + Google OAuth) and Postgres storage
+- **Firebase** for authentication (email/password + Google) and storage (Firestore)
 - **exceljs** for `.xlsx` export (built entirely client-side, handed to the browser as a download)
 
 ## Folder structure
@@ -16,49 +16,50 @@ timesheets to Excel. Built with TypeScript, React, Vite, and Supabase.
 src/
 ├── screens/       # Login/signup, post-login choice, workplace setup, timelist editor
 ├── components/    # Calendar view, workplace tables, export bar, top bar, ui primitives
-├── context/       # Auth + timelist React contexts (Supabase-backed)
-├── lib/           # Supabase client, data access, Excel export/import
+├── context/       # Auth + timelist React contexts (Firebase-backed)
+├── lib/           # Firebase client, data access, Excel export/import
 └── shared/        # Pure logic: domain types, Norwegian holiday calculator, timelist
                     # generator — no DOM/browser APIs, easy to unit-test in isolation
-supabase/
-└── migrations/    # SQL schema + Row Level Security policies
+firestore.rules    # Security rules — every user can only read/write their own data
+firebase.json      # Points the Firebase CLI at firestore.rules for deployment
 ```
 
-## 1. Supabase project setup
+## 1. Firebase project setup
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. In the SQL Editor, run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql).
-   This creates the `users`, `workplaces`, `timelists`, and `time_entries` tables, a
-   trigger that populates `public.users` on sign-up, and Row Level Security policies so
-   each user only ever sees their own rows.
-3. Go to **Project Settings → API** and copy the **Project URL** and **anon public key**.
-4. Copy `.env.example` to `.env` and fill them in:
+1. Create a project at [console.firebase.google.com](https://console.firebase.google.com).
+2. **Build → Authentication → Get started** — enable the **Email/Password** and
+   **Google** sign-in providers (Sign-in method tab). Unlike a typical OAuth setup,
+   Google sign-in needs no separate Google Cloud Console configuration — Firebase
+   handles the client ID/secret for you.
+3. **Build → Firestore Database → Create database** — start in production mode (the
+   security rules below replace the default deny-all).
+4. Deploy `firestore.rules` (every user can only read/write documents under their own
+   `users/{uid}/...` subtree — see the file for the exact rules):
+   - Easiest: open **Firestore Database → Rules** in the console, paste in the contents
+     of [`firestore.rules`](firestore.rules), and publish.
+   - Or, with the [Firebase CLI](https://firebase.google.com/docs/cli) installed:
+     `firebase deploy --only firestore:rules --project <your-project-id>`
+5. **Project settings (gear icon) → General → Your apps → Add app → Web** — register
+   a web app and copy the `firebaseConfig` values it gives you.
+6. Copy `.env.example` to `.env` and fill in those values:
 
    ```
-   VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-anon-key
+   VITE_FIREBASE_API_KEY=...
+   VITE_FIREBASE_AUTH_DOMAIN=...
+   VITE_FIREBASE_PROJECT_ID=...
+   VITE_FIREBASE_STORAGE_BUCKET=...
+   VITE_FIREBASE_MESSAGING_SENDER_ID=...
+   VITE_FIREBASE_APP_ID=...
    ```
 
-## 2. Google OAuth setup
+## 2. Google sign-in — authorized domains
 
-Standard Supabase web OAuth flow: clicking "Sign in with Google" redirects the whole
-page to Google's consent screen, then back to this app's own URL with the session
-attached — no extra app-side plumbing needed beyond configuring the two providers.
-
-**Google Cloud Console:**
-1. Create (or reuse) a project at [console.cloud.google.com](https://console.cloud.google.com).
-2. **APIs & Services → Credentials → Create Credentials → OAuth client ID**, type **Web application**.
-3. Under **Authorized redirect URIs**, add Supabase's fixed callback:
-   `https://<your-project-ref>.supabase.co/auth/v1/callback`
-4. Copy the generated **Client ID** and **Client Secret**.
-
-**Supabase Dashboard:**
-1. **Authentication → Providers → Google** — enable it and paste the Client ID/Secret.
-2. **Authentication → URL Configuration → Redirect URLs** — add every URL the app will
-   actually be served from, e.g.:
-   - `http://localhost:5173` (Vite's default dev server)
-   - `https://your-app.vercel.app` (production, once deployed)
-   - any Vercel preview-deployment domain pattern you want to support
+Firebase's Google sign-in (`signInWithPopup`) only works from domains you've told it
+about. Under **Authentication → Settings → Authorized domains**, add every domain the
+app will actually be served from:
+- `localhost` (usually already there by default, covers `npm run dev`)
+- `your-app.vercel.app` (production, once deployed)
+- any Vercel preview-deployment domain pattern you want to support
 
 ## 3. Running in development
 
@@ -83,11 +84,11 @@ with a catch-all rewrite to `index.html`).
 
 1. Import the repo at [vercel.com/new](https://vercel.com/new) — Vercel auto-detects
    the Vite project; the settings from `vercel.json` are picked up automatically.
-2. Add the two Supabase env vars under **Project Settings → Environment Variables**:
-   `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
-3. Deploy. Once you have the real `https://….vercel.app` URL, add it to Supabase's
-   **Authentication → URL Configuration → Redirect URLs** (step 2 above) — Google
-   sign-in won't return to the app correctly until that's added.
+2. Add the six Firebase env vars under **Project Settings → Environment Variables**
+   (same names/values as your local `.env`).
+3. Deploy. Once you have the real `https://….vercel.app` URL, add it to Firebase's
+   **Authentication → Settings → Authorized domains** (step 2 above) — Google sign-in
+   will fail from that domain until it's added.
 
 Every push to `main` (once connected) triggers a new Vercel deployment automatically —
 no GitHub Actions workflow needed for that part; `.github/workflows/ci.yml` still runs
@@ -95,8 +96,12 @@ no GitHub Actions workflow needed for that part; `.github/workflows/ci.yml` stil
 
 ## How it works
 
-- **Auth** — email/password or Google via Supabase Auth. Sessions persist in
-  `localStorage`, so returning users stay signed in until they explicitly sign out.
+- **Auth** — email/password or Google via Firebase Authentication. Sessions persist
+  across restarts, so returning users stay signed in until they explicitly sign out.
+- **Data model** — everything lives under `users/{uid}/...` in Firestore (`workplaces`,
+  `timelists`, and each timelist's `entries` subcollection), so Firestore security
+  rules can enforce "only the owner can read/write" once per subtree instead of a
+  per-row policy. See `firestore.rules` and `src/lib/data.ts`.
 - **First-time users** add one or more workplaces, then generate a blank monthly
   timelist — one row per calendar day, with weekends and Norwegian public holidays
   ("red days", computed locally via `src/shared/holidays.ts` — no network dependency)

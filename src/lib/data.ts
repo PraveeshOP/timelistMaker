@@ -1,146 +1,153 @@
-import { supabase } from './supabaseClient'
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  writeBatch
+} from 'firebase/firestore'
+import { db } from './firebaseClient'
 import type { TimeEntry, Timelist, TimelistRow, Workplace } from '@shared/domain'
 
-interface WorkplaceRow {
-  id: string
-  user_id: string
+// Everything lives under users/{uid}/... so Firestore security rules can scope an
+// entire subtree with a single `request.auth.uid == uid` check (see firestore.rules) —
+// no per-document owner field or RLS-style policy needed.
+const usersCol = collection(db, 'users')
+const workplacesCol = (uid: string) => collection(db, 'users', uid, 'workplaces')
+const timelistsCol = (uid: string) => collection(db, 'users', uid, 'timelists')
+const entriesCol = (uid: string, timelistId: string) =>
+  collection(db, 'users', uid, 'timelists', timelistId, 'entries')
+
+function pad2(n: number): string {
+  return n.toString().padStart(2, '0')
+}
+
+export async function ensureUserDoc(uid: string, email: string, fullName: string): Promise<void> {
+  await setDoc(doc(usersCol, uid), { email, fullName, createdAt: new Date().toISOString() })
+}
+
+export async function updateUserFullName(uid: string, fullName: string): Promise<void> {
+  await updateDoc(doc(usersCol, uid), { fullName })
+}
+
+interface WorkplaceDoc {
   name: string
-  created_at: string
+  createdAt: string
 }
 
-function fromWorkplaceRow(row: WorkplaceRow): Workplace {
-  return { id: row.id, userId: row.user_id, name: row.name, createdAt: row.created_at }
+function fromWorkplaceDoc(uid: string, id: string, data: WorkplaceDoc): Workplace {
+  return { id, userId: uid, name: data.name, createdAt: data.createdAt }
 }
 
-export async function updateUserFullName(userId: string, fullName: string): Promise<void> {
-  const { error } = await supabase.from('users').update({ full_name: fullName }).eq('id', userId)
-  if (error) throw error
+export async function fetchWorkplaces(uid: string): Promise<Workplace[]> {
+  const snapshot = await getDocs(query(workplacesCol(uid), orderBy('createdAt', 'asc')))
+  return snapshot.docs.map((d) => fromWorkplaceDoc(uid, d.id, d.data() as WorkplaceDoc))
 }
 
-export async function fetchWorkplaces(userId: string): Promise<Workplace[]> {
-  const { data, error } = await supabase
-    .from('workplaces')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: true })
-  if (error) throw error
-  return (data as WorkplaceRow[]).map(fromWorkplaceRow)
+export async function createWorkplace(uid: string, name: string): Promise<Workplace> {
+  const data: WorkplaceDoc = { name, createdAt: new Date().toISOString() }
+  const ref = await addDoc(workplacesCol(uid), data)
+  return fromWorkplaceDoc(uid, ref.id, data)
 }
 
-export async function createWorkplace(userId: string, name: string): Promise<Workplace> {
-  const { data, error } = await supabase
-    .from('workplaces')
-    .insert({ user_id: userId, name })
-    .select('*')
-    .single()
-  if (error) throw error
-  return fromWorkplaceRow(data as WorkplaceRow)
+export async function renameWorkplace(uid: string, id: string, name: string): Promise<void> {
+  await updateDoc(doc(workplacesCol(uid), id), { name })
 }
 
-export async function renameWorkplace(id: string, name: string): Promise<void> {
-  const { error } = await supabase.from('workplaces').update({ name }).eq('id', id)
-  if (error) throw error
+export async function deleteWorkplace(uid: string, id: string): Promise<void> {
+  await deleteDoc(doc(workplacesCol(uid), id))
 }
 
-export async function deleteWorkplace(id: string): Promise<void> {
-  const { error } = await supabase.from('workplaces').delete().eq('id', id)
-  if (error) throw error
-}
-
-interface TimelistRowDb {
-  id: string
-  user_id: string
+interface TimelistDoc {
   month: number
   year: number
-  created_at: string
+  createdAt: string
 }
 
-function fromTimelistRow(row: TimelistRowDb): Timelist {
-  return { id: row.id, userId: row.user_id, month: row.month, year: row.year, createdAt: row.created_at }
+function fromTimelistDoc(uid: string, id: string, data: TimelistDoc): Timelist {
+  return { id, userId: uid, month: data.month, year: data.year, createdAt: data.createdAt }
 }
 
-export async function fetchTimelists(userId: string): Promise<Timelist[]> {
-  const { data, error } = await supabase
-    .from('timelists')
-    .select('*')
-    .eq('user_id', userId)
-    .order('year', { ascending: false })
-    .order('month', { ascending: false })
-  if (error) throw error
-  return (data as TimelistRowDb[]).map(fromTimelistRow)
+/** Fetches every timelist for the user, newest first. Sorted client-side (rather than
+ *  via a multi-field Firestore orderBy) so this never needs a composite index. */
+export async function fetchTimelists(uid: string): Promise<Timelist[]> {
+  const snapshot = await getDocs(timelistsCol(uid))
+  const timelists = snapshot.docs.map((d) => fromTimelistDoc(uid, d.id, d.data() as TimelistDoc))
+  return timelists.sort((a, b) => b.year - a.year || b.month - a.month)
 }
 
-interface TimeEntryRowDb {
-  id: string
-  user_id: string
-  workplace_id: string
-  timelist_id: string
+interface TimeEntryDoc {
+  workplaceId: string
   date: string
-  start_time: string | null
-  stop_time: string | null
-  total_hours: string | number
-  is_weekend: boolean
-  is_holiday: boolean
+  startTime: string | null
+  stopTime: string | null
+  totalHours: number
+  isWeekend: boolean
+  isHoliday: boolean
 }
 
-function fromTimeEntryRow(row: TimeEntryRowDb): TimeEntry {
+function fromTimeEntryDoc(uid: string, timelistId: string, id: string, data: TimeEntryDoc): TimeEntry {
   return {
-    id: row.id,
-    userId: row.user_id,
-    workplaceId: row.workplace_id,
-    timelistId: row.timelist_id,
-    date: row.date,
-    startTime: row.start_time,
-    stopTime: row.stop_time,
-    totalHours: Number(row.total_hours),
-    isWeekend: row.is_weekend,
-    isHoliday: row.is_holiday
+    id,
+    userId: uid,
+    workplaceId: data.workplaceId,
+    timelistId,
+    date: data.date,
+    startTime: data.startTime,
+    stopTime: data.stopTime,
+    totalHours: data.totalHours,
+    isWeekend: data.isWeekend,
+    isHoliday: data.isHoliday
   }
 }
 
-export async function fetchTimeEntriesForTimelist(timelistId: string): Promise<TimeEntry[]> {
-  const { data, error } = await supabase
-    .from('time_entries')
-    .select('*')
-    .eq('timelist_id', timelistId)
-    .order('date', { ascending: true })
-  if (error) throw error
-  return (data as TimeEntryRowDb[]).map(fromTimeEntryRow)
+export async function fetchTimeEntriesForTimelist(uid: string, timelistId: string): Promise<TimeEntry[]> {
+  const snapshot = await getDocs(query(entriesCol(uid, timelistId), orderBy('date', 'asc')))
+  return snapshot.docs.map((d) => fromTimeEntryDoc(uid, timelistId, d.id, d.data() as TimeEntryDoc))
 }
 
-/** Creates (or reuses) the `timelists` row for a given month/year, keyed by the unique
- *  (user_id, month, year) constraint. */
-export async function upsertTimelist(userId: string, month: number, year: number): Promise<Timelist> {
-  const { data, error } = await supabase
-    .from('timelists')
-    .upsert({ user_id: userId, month, year }, { onConflict: 'user_id,month,year' })
-    .select('*')
-    .single()
-  if (error) throw error
-  return fromTimelistRow(data as TimelistRowDb)
+/** Creates (or reuses) the timelist for a given month/year, keyed by a deterministic
+ *  "yyyy-MM" document id so re-generating the same month always lands on the same doc. */
+export async function upsertTimelist(uid: string, month: number, year: number): Promise<Timelist> {
+  const id = `${year}-${pad2(month)}`
+  const ref = doc(timelistsCol(uid), id)
+  const existing = await getDoc(ref)
+  const data: TimelistDoc = {
+    month,
+    year,
+    createdAt: existing.exists() ? (existing.data() as TimelistDoc).createdAt : new Date().toISOString()
+  }
+  await setDoc(ref, data)
+  return fromTimelistDoc(uid, id, data)
 }
 
-/** Persists every row of a generated timelist, keyed by the unique
- *  (timelist_id, workplace_id, date) constraint so re-saves overwrite in place. */
-export async function saveTimelistRows(
-  userId: string,
-  timelistId: string,
-  rows: TimelistRow[]
-): Promise<void> {
+const BATCH_CHUNK_SIZE = 450 // Firestore's write-batch limit is 500 ops; stay comfortably under it.
+
+/** Persists every row of a generated timelist, keyed by a deterministic
+ *  "workplaceId_date" document id so re-saves overwrite the same doc in place. */
+export async function saveTimelistRows(uid: string, timelistId: string, rows: TimelistRow[]): Promise<void> {
   if (rows.length === 0) return
-  const payload = rows.map((row) => ({
-    user_id: userId,
-    timelist_id: timelistId,
-    workplace_id: row.workplaceId,
-    date: row.date,
-    start_time: row.startTime,
-    stop_time: row.stopTime,
-    total_hours: row.totalHours,
-    is_weekend: row.isWeekend,
-    is_holiday: row.isHoliday
-  }))
-  const { error } = await supabase
-    .from('time_entries')
-    .upsert(payload, { onConflict: 'timelist_id,workplace_id,date' })
-  if (error) throw error
+
+  for (let i = 0; i < rows.length; i += BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db)
+    for (const row of rows.slice(i, i + BATCH_CHUNK_SIZE)) {
+      const entryId = `${row.workplaceId}_${row.date}`
+      const data: TimeEntryDoc = {
+        workplaceId: row.workplaceId,
+        date: row.date,
+        startTime: row.startTime,
+        stopTime: row.stopTime,
+        totalHours: row.totalHours,
+        isWeekend: row.isWeekend,
+        isHoliday: row.isHoliday
+      }
+      batch.set(doc(entriesCol(uid, timelistId), entryId), data)
+    }
+    await batch.commit()
+  }
 }

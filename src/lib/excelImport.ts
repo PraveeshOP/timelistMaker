@@ -127,7 +127,7 @@ export async function parseTimesheetWorkbook(buffer: ArrayBuffer): Promise<Parse
 
       rows.push({
         date: dateStr,
-        workplaceId: '', // resolved once the workplace is matched/created in Supabase
+        workplaceId: '', // resolved once the workplace is matched/created in Firestore
         startTime: cellToTime(sheet.getCell(row, startCol).value),
         stopTime: cellToTime(sheet.getCell(row, stopCol).value),
         totalHours: cellToHours(sheet.getCell(row, hoursCol).value),

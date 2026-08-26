@@ -1,4 +1,14 @@
-import type { Session, User } from '@supabase/supabase-js'
+import {
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  getAdditionalUserInfo,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  updateProfile,
+  type User as FirebaseUser
+} from 'firebase/auth'
 import {
   createContext,
   useContext,
@@ -7,8 +17,8 @@ import {
   useState,
   type ReactNode
 } from 'react'
-import { supabase } from '../lib/supabaseClient'
-import { updateUserFullName } from '../lib/data'
+import { auth } from '../lib/firebaseClient'
+import { ensureUserDoc, updateUserFullName } from '../lib/data'
 
 export interface AppUser {
   id: string
@@ -17,7 +27,6 @@ export interface AppUser {
 }
 
 interface AuthContextValue {
-  session: Session | null
   user: AppUser | null
   loading: boolean
   signInWithPassword: (email: string, password: string) => Promise<{ error?: string }>
@@ -33,81 +42,83 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function toAppUser(session: Session | null): AppUser | null {
-  const user: User | undefined = session?.user
-  if (!user) return null
+function toAppUser(firebaseUser: FirebaseUser | null): AppUser | null {
+  if (!firebaseUser) return null
   return {
-    id: user.id,
-    email: user.email ?? '',
-    fullName: (user.user_metadata?.full_name as string | undefined) ?? ''
+    id: firebaseUser.uid,
+    email: firebaseUser.email ?? '',
+    fullName: firebaseUser.displayName ?? ''
   }
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<AppUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
+    // Fires on sign-in, sign-out, and token refresh — but NOT on a bare updateProfile()
+    // call, so signUpWithPassword/updateFullName below refresh `user` explicitly too.
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(toAppUser(firebaseUser))
       setLoading(false)
     })
-
-    const {
-      data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession)
-    })
-
-    return () => subscription.unsubscribe()
+    return unsubscribe
   }, [])
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      session,
-      user: toAppUser(session),
+      user,
       loading,
       async signInWithPassword(email, password) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
-        return { error: error?.message }
+        try {
+          await signInWithEmailAndPassword(auth, email, password)
+          return {}
+        } catch (error) {
+          return { error: errorMessage(error) }
+        }
       },
       async signUpWithPassword(email, password, fullName) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { full_name: fullName } }
-        })
-        return { error: error?.message }
+        try {
+          const credential = await createUserWithEmailAndPassword(auth, email, password)
+          await updateProfile(credential.user, { displayName: fullName })
+          await ensureUserDoc(credential.user.uid, email, fullName)
+          setUser(toAppUser(auth.currentUser))
+          return {}
+        } catch (error) {
+          return { error: errorMessage(error) }
+        }
       },
       async signInWithGoogle() {
-        // Standard web OAuth: Supabase redirects the whole page to Google, then back to
-        // this same origin with the session in the URL — supabase-js's detectSessionInUrl
-        // picks it up automatically (see supabaseClient.ts), no manual handling needed.
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: { redirectTo: window.location.origin }
-        })
-        return { error: error?.message }
+        try {
+          const result = await signInWithPopup(auth, new GoogleAuthProvider())
+          if (getAdditionalUserInfo(result)?.isNewUser) {
+            await ensureUserDoc(result.user.uid, result.user.email ?? '', result.user.displayName ?? '')
+          }
+          return {}
+        } catch (error) {
+          return { error: errorMessage(error) }
+        }
       },
       async signOut() {
-        await supabase.auth.signOut()
+        await firebaseSignOut(auth)
       },
       async updateFullName(fullName: string) {
-        const { error } = await supabase.auth.updateUser({ data: { full_name: fullName } })
-        if (error) return { error: error.message }
-        const userId = session?.user.id
-        if (userId) {
-          try {
-            await updateUserFullName(userId, fullName)
-          } catch {
-            // Auth metadata (the source of truth for the app) is already updated —
-            // this mirror write to public.users is best-effort.
-          }
+        if (!auth.currentUser) return { error: 'Not signed in.' }
+        try {
+          await updateProfile(auth.currentUser, { displayName: fullName })
+          await updateUserFullName(auth.currentUser.uid, fullName)
+          setUser(toAppUser(auth.currentUser))
+          return {}
+        } catch (error) {
+          return { error: errorMessage(error) }
         }
-        return {}
       }
     }),
-    [session, loading]
+    [user, loading]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
