@@ -1,10 +1,6 @@
 node_modules
-out
-release
 dist
-dist-electron
 .env
 *.local
 .DS_Store
 npm-debug.log*
-node_modules

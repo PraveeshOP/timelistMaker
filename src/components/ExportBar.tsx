@@ -5,8 +5,25 @@ import { buildTimesheetWorkbook, MONTH_NAMES } from '../lib/excelExport'
 import { Button } from './ui/Button'
 import { Spinner } from './ui/Spinner'
 
+const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
 function sanitizeForFilename(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9]+/g, '') || 'User'
+}
+
+/** Triggers a browser download of the given buffer — there's no native save dialog on
+ *  the web, so this hands the file to the browser's own download flow (which typically
+ *  saves straight to the Downloads folder, or prompts, depending on browser settings). */
+function downloadBuffer(buffer: ArrayBuffer, fileName: string): void {
+  const blob = new Blob([buffer], { type: XLSX_MIME_TYPE })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 export function ExportBar(): React.JSX.Element {
@@ -29,17 +46,13 @@ export function ExportBar(): React.JSX.Element {
     try {
       const namePart = sanitizeForFilename(user.fullName || user.email)
       const monthPart = MONTH_NAMES[generated.month - 1]
-      const defaultFileName = `${namePart}_Timelist_${monthPart}_${generated.year}.xlsx`
-
-      const dialogResult = await window.api.dialogSaveFile({ defaultFileName })
-      if (dialogResult.canceled || !dialogResult.filePath) return
+      const fileName = `${namePart}_Timelist_${monthPart}_${generated.year}.xlsx`
 
       const buffer = await buildTimesheetWorkbook(generated, user.fullName || user.email)
-      const writeResult = await window.api.exportWriteXlsx({
-        filePath: dialogResult.filePath,
-        buffer
-      })
-      setMessage(writeResult.ok ? 'Exported successfully.' : `Export failed: ${writeResult.error}`)
+      downloadBuffer(buffer, fileName)
+      setMessage('Exported successfully.')
+    } catch (error) {
+      setMessage(`Export failed: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setExporting(false)
     }

@@ -1,15 +1,12 @@
 {
   "name": "timelistmaker",
   "version": "0.1.6",
-  "description": "Cross-platform desktop time-tracking app",
-  "main": "./out/main/index.js",
+  "description": "Web app for tracking work hours across multiple workplaces and exporting monthly timesheets to Excel",
   "scripts": {
-    "dev": "electron-vite dev",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "build": "npm run typecheck && electron-vite build",
-    "postinstall": "electron-builder install-app-deps",
-    "dist:win": "npm run build && electron-builder --win nsis",
-    "dist:mac": "npm run build && electron-builder --mac dmg"
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview"
   },
   "author": "Prabesh Khatri",
   "license": "UNLICENSED",
@@ -27,9 +24,6 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
-    "electron": "^43.1.1",
-    "electron-builder": "^26.15.3",
-    "electron-vite": "^5.0.0",
     "postcss": "^8.5.19",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",

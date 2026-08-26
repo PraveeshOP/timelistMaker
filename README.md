@@ -1,27 +1,25 @@
 # Timelist Maker
 
-Cross-platform desktop app for tracking work hours across multiple workplaces and
-exporting monthly timesheets to Excel. Built with Electron, TypeScript, React,
-and Supabase.
+Web app for tracking work hours across multiple workplaces and exporting monthly
+timesheets to Excel. Built with TypeScript, React, Vite, and Supabase.
 
 ## Stack
 
-- **Electron** (packaged with electron-builder for Windows `.exe` and macOS `.dmg`)
-- **TypeScript** everywhere (main, preload, renderer)
-- **React** renderer UI, built with **Vite** via **electron-vite**
+- **React** + **TypeScript**, built with **Vite**
 - **Tailwind CSS** for styling
 - **Supabase** for authentication (email/password + Google OAuth) and Postgres storage
-- **exceljs** for `.xlsx` export
+- **exceljs** for `.xlsx` export (built entirely client-side, handed to the browser as a download)
 
 ## Folder structure
 
 ```
 src/
-├── main/          # Electron main process: window, OAuth deep-link handling, IPC
-├── preload/       # contextBridge — the only thing the renderer can call into Node/Electron with
-├── renderer/       # React app (screens, components, contexts, Supabase client)
-└── shared/        # Pure logic shared by main + renderer: types, holiday calculator,
-                    # timelist generator, IPC contract — no Electron/DOM/Node APIs
+├── screens/       # Login/signup, post-login choice, workplace setup, timelist editor
+├── components/    # Calendar view, workplace tables, export bar, top bar, ui primitives
+├── context/       # Auth + timelist React contexts (Supabase-backed)
+├── lib/           # Supabase client, data access, Excel export/import
+└── shared/        # Pure logic: domain types, Norwegian holiday calculator, timelist
+                    # generator — no DOM/browser APIs, easy to unit-test in isolation
 supabase/
 └── migrations/    # SQL schema + Row Level Security policies
 ```
@@ -43,32 +41,24 @@ supabase/
 
 ## 2. Google OAuth setup
 
-Google sign-in in Electron works by opening the user's system browser for the Google
-consent screen, then handing control back to the app via a custom `timelistmaker://`
-protocol link (embedding Google's login inside an in-app browser window is blocked by
-Google). Wiring this up requires configuring both Google Cloud Console and Supabase:
+Standard Supabase web OAuth flow: clicking "Sign in with Google" redirects the whole
+page to Google's consent screen, then back to this app's own URL with the session
+attached — no extra app-side plumbing needed beyond configuring the two providers.
 
 **Google Cloud Console:**
 1. Create (or reuse) a project at [console.cloud.google.com](https://console.cloud.google.com).
 2. **APIs & Services → Credentials → Create Credentials → OAuth client ID**, type **Web application**.
 3. Under **Authorized redirect URIs**, add Supabase's fixed callback:
    `https://<your-project-ref>.supabase.co/auth/v1/callback`
-   (Google does not accept a custom `timelistmaker://` scheme directly — Supabase is the
-   fixed intermediary that performs the final redirect into the app.)
 4. Copy the generated **Client ID** and **Client Secret**.
 
 **Supabase Dashboard:**
 1. **Authentication → Providers → Google** — enable it and paste the Client ID/Secret.
-2. **Authentication → URL Configuration → Redirect URLs** — add:
-   `timelistmaker://auth-callback`
-
-No further app-side configuration is needed — the protocol handler is registered
-automatically when the app starts (see `src/main/protocol.ts`).
-
-> Note: OS-level protocol registration is most reliable against a **built** app. In dev
-> mode (`npm run dev`) the OS may not consistently hand off the custom-scheme redirect to
-> an unpackaged Electron process on every platform — if Google sign-in doesn't return to
-> the app in dev, verify it again against a `dist:mac`/`dist:win` build.
+2. **Authentication → URL Configuration → Redirect URLs** — add every URL the app will
+   actually be served from, e.g.:
+   - `http://localhost:5173` (Vite's default dev server)
+   - `https://your-app.vercel.app` (production, once deployed)
+   - any Vercel preview-deployment domain pattern you want to support
 
 ## 3. Running in development
 
@@ -77,81 +67,49 @@ npm install
 npm run dev
 ```
 
-This starts electron-vite in dev mode with HMR for the renderer and auto-restart for
-the main/preload processes.
+Starts the Vite dev server (default `http://localhost:5173`) with HMR.
 
-## 4. Building installers
-
-```bash
-npm run dist:mac    # macOS .dmg (universal: x64 + arm64)
-npm run dist:win    # Windows .exe (NSIS)
-```
-
-Both scripts run `npm run build` first (typecheck + electron-vite build) and then
-electron-builder. Cross-building macOS installers from Windows (or vice versa) is not
-supported by electron-builder without extra tooling — build each platform's installer
-on that platform, or use a CI matrix.
-
-These produce **unsigned** installers, which is fine for local testing and internal
-distribution:
-- **macOS**: Gatekeeper will show an "unidentified developer" warning on first launch
-  (right-click → Open to bypass). To ship a signed/notarized build, get an Apple
-  Developer ID certificate and fill in `mac.identity` + set up a notarization step in
-  `electron-builder.yml`.
-- **Windows**: SmartScreen may warn on first run. To sign, set `win.certificateFile` /
-  `win.certificatePassword` (or `CSC_LINK` / `CSC_KEY_PASSWORD` env vars) in
-  `electron-builder.yml`.
-
-Custom app icons: drop `icon.icns` (mac) and `icon.ico` (win) into `build/` and
-uncomment the corresponding `icon:` lines in `electron-builder.yml`. Without them,
-electron-builder falls back to the default Electron icon.
-
-## 5. CI/CD (GitHub Actions)
-
-Two workflows live in `.github/workflows/`:
-
-- **`ci.yml`** — runs `typecheck` + `build` on every push/PR to `main`. Doesn't need any
-  secrets (bundling doesn't execute the app, so missing Supabase config can't fail it).
-- **`release.yml`** — on every pushed tag matching `v*.*.*` (or a manual run), builds on
-  both a `macos-latest` and a `windows-latest` runner (electron-builder can't cross-build
-  a `.dmg` from Linux/Windows) and publishes the resulting `.dmg`/`.exe` straight
-  to a GitHub Release matching that tag, via electron-builder's built-in GitHub publish
-  provider (`publish: { provider: github }` in `electron-builder.yml`).
-
-**One-time setup** — add these under the repo's **Settings → Secrets and variables →
-Actions**:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-
-(the same values from your `.env` — these get baked into the release build, since that's
-the app your users will actually run). `GITHUB_TOKEN` is provided automatically; no setup
-needed.
-
-**Cutting a release:**
+## 4. Building for production
 
 ```bash
-npm version patch   # bumps package.json's version and creates a matching git commit + tag
-git push && git push --tags
+npm run build      # typecheck + vite build → dist/
+npm run preview    # serve the dist/ build locally to sanity-check it
 ```
 
-That tag push triggers `release.yml`, which builds and attaches the installers to a new
-GitHub Release. These are the same **unsigned** builds described above — first-launch
-Gatekeeper/SmartScreen warnings apply the same way as a local build.
+## 5. Deploying (Vercel)
+
+A `vercel.json` is included (`buildCommand: npm run build`, `outputDirectory: dist`,
+with a catch-all rewrite to `index.html`).
+
+1. Import the repo at [vercel.com/new](https://vercel.com/new) — Vercel auto-detects
+   the Vite project; the settings from `vercel.json` are picked up automatically.
+2. Add the two Supabase env vars under **Project Settings → Environment Variables**:
+   `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+3. Deploy. Once you have the real `https://….vercel.app` URL, add it to Supabase's
+   **Authentication → URL Configuration → Redirect URLs** (step 2 above) — Google
+   sign-in won't return to the app correctly until that's added.
+
+Every push to `main` (once connected) triggers a new Vercel deployment automatically —
+no GitHub Actions workflow needed for that part; `.github/workflows/ci.yml` still runs
+`typecheck` + `build` on every push/PR as a fast correctness check independent of Vercel.
 
 ## How it works
 
-- **Auth** — email/password or Google via Supabase Auth. Sessions persist in the
-  renderer's `localStorage` (backed by the app's on-disk profile), so returning users
-  stay signed in until they explicitly sign out.
+- **Auth** — email/password or Google via Supabase Auth. Sessions persist in
+  `localStorage`, so returning users stay signed in until they explicitly sign out.
 - **First-time users** add one or more workplaces, then generate a blank monthly
   timelist — one row per calendar day, with weekends and Norwegian public holidays
   ("red days", computed locally via `src/shared/holidays.ts` — no network dependency)
   defaulted blank but fully editable.
 - **Returning users** choose, after login, whether to generate a new month from an
   existing timelist as a template (reusing workplaces and each workplace's day-of-week
-  pattern, shifted to the new month) or start from scratch.
-- **Every field is editable** — date, start/stop time, hours, and workplace name — directly
-  in the generated table. Hours auto-calculate from start/stop but can be overridden.
-- **Export** writes an `.xlsx` (via exceljs) with one sheet per workplace plus a summary
-  sheet, named `Name_Timelist_Month_Year.xlsx`, saved wherever the user picks in the
-  native save dialog.
+  pattern, shifted to the new month), start from scratch, or import a previously
+  exported `.xlsx` file (drag-and-drop or file picker) to reconstruct that month's data.
+- **Every field is editable** — date, start/stop time, hours, and workplace name —
+  directly in the generated tables, or via the calendar view (a month grid where
+  clicking a day edits that day's hours for every workplace at once). Hours
+  auto-calculate from start/stop but can be overridden; the "repeat week 1" button
+  fills in the rest of the month from the first week's pattern.
+- **Export** builds an `.xlsx` (via exceljs, matching a specific two-table-per-workplace
+  layout) entirely in the browser and hands it to the browser's own download flow,
+  named `Name_Timelist_Month_Year.xlsx`.

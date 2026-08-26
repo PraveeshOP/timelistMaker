@@ -9,7 +9,6 @@ import {
 } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { updateUserFullName } from '../lib/data'
-import { ipc } from '../lib/ipc'
 
 export interface AppUser {
   id: string
@@ -60,17 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       setSession(newSession)
     })
 
-    const unsubscribeDeepLink = ipc.onAuthCallback((payload) => {
-      supabase.auth.setSession({
-        access_token: payload.accessToken,
-        refresh_token: payload.refreshToken
-      })
-    })
-
-    return () => {
-      subscription.unsubscribe()
-      unsubscribeDeepLink()
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
   const value = useMemo<AuthContextValue>(
@@ -91,19 +80,14 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         return { error: error?.message }
       },
       async signInWithGoogle() {
-        const { data, error } = await supabase.auth.signInWithOAuth({
+        // Standard web OAuth: Supabase redirects the whole page to Google, then back to
+        // this same origin with the session in the URL — supabase-js's detectSessionInUrl
+        // picks it up automatically (see supabaseClient.ts), no manual handling needed.
+        const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
-          options: {
-            redirectTo: 'timelistmaker://auth-callback',
-            skipBrowserRedirect: true
-          }
+          options: { redirectTo: window.location.origin }
         })
-        if (error) return { error: error.message }
-        if (!data.url) return { error: 'Supabase did not return an OAuth URL.' }
-
-        const result = await ipc.authOpenExternal({ url: data.url })
-        if (!result.ok) return { error: result.error ?? 'Failed to open the sign-in page.' }
-        return {}
+        return { error: error?.message }
       },
       async signOut() {
         await supabase.auth.signOut()

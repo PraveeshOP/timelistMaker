@@ -13,6 +13,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false
+    // Web OAuth flow: Supabase redirects back to this origin with the session in the
+    // URL fragment, and supabase-js parses it out of window.location automatically.
+    detectSessionInUrl: true
   }
 })
