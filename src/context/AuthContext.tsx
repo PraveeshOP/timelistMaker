@@ -2,9 +2,10 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   getAdditionalUserInfo,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   updateProfile,
   type User as FirebaseUser
@@ -60,6 +61,21 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Picks up the return leg of signInWithGoogle's redirect, if the user just came
+    // back from Google — resolves to null on every other page load. Runs alongside
+    // onAuthStateChanged (below) rather than blocking on it, since nothing in this app
+    // reads the Firestore users/{uid} doc back on the critical path — it's fine for
+    // ensureUserDoc to finish a moment after the signed-in UI already shows.
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result && getAdditionalUserInfo(result)?.isNewUser) {
+          return ensureUserDoc(result.user.uid, result.user.email ?? '', result.user.displayName ?? '')
+        }
+      })
+      .catch((error) => {
+        console.error('Google redirect sign-in failed:', error)
+      })
+
     // Fires on sign-in, sign-out, and token refresh — but NOT on a bare updateProfile()
     // call, so signUpWithPassword/updateFullName below refresh `user` explicitly too.
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -93,11 +109,13 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         }
       },
       async signInWithGoogle() {
+        // Redirect rather than popup: signInWithPopup is unreliable across browsers
+        // (Safari and, increasingly, Chrome block it under various conditions
+        // regardless of how the click handler is wired). This navigates the whole
+        // page away to Google and back — the result is picked up by getRedirectResult
+        // in the effect above, not returned here.
         try {
-          const result = await signInWithPopup(auth, new GoogleAuthProvider())
-          if (getAdditionalUserInfo(result)?.isNewUser) {
-            await ensureUserDoc(result.user.uid, result.user.email ?? '', result.user.displayName ?? '')
-          }
+          await signInWithRedirect(auth, new GoogleAuthProvider())
           return {}
         } catch (error) {
           return { error: errorMessage(error) }

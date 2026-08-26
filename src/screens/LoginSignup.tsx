@@ -43,8 +43,10 @@ export function LoginSignup(): React.JSX.Element {
     setGoogleSubmitting(true)
     try {
       const { error: err } = await signInWithGoogle()
+      // On success this redirects the whole page to Google, so there's nothing left
+      // to show here — this only ever runs when signInWithGoogle failed before that
+      // redirect even started (e.g. a network error).
       if (err) setError(err)
-      else setInfo('Continue in your browser to finish signing in with Google…')
     } finally {
       setGoogleSubmitting(false)
     }
