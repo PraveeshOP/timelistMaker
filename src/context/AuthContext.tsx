@@ -2,10 +2,9 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   getAdditionalUserInfo,
-  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithRedirect,
+  signInWithPopup,
   signOut as firebaseSignOut,
   updateProfile,
   type User as FirebaseUser
@@ -61,21 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Picks up the return leg of signInWithGoogle's redirect, if the user just came
-    // back from Google — resolves to null on every other page load. Runs alongside
-    // onAuthStateChanged (below) rather than blocking on it, since nothing in this app
-    // reads the Firestore users/{uid} doc back on the critical path — it's fine for
-    // ensureUserDoc to finish a moment after the signed-in UI already shows.
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result && getAdditionalUserInfo(result)?.isNewUser) {
-          return ensureUserDoc(result.user.uid, result.user.email ?? '', result.user.displayName ?? '')
-        }
-      })
-      .catch((error) => {
-        console.error('Google redirect sign-in failed:', error)
-      })
-
     // Fires on sign-in, sign-out, and token refresh — but NOT on a bare updateProfile()
     // call, so signUpWithPassword/updateFullName below refresh `user` explicitly too.
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -109,13 +93,18 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         }
       },
       async signInWithGoogle() {
-        // Redirect rather than popup: signInWithPopup is unreliable across browsers
-        // (Safari and, increasingly, Chrome block it under various conditions
-        // regardless of how the click handler is wired). This navigates the whole
-        // page away to Google and back — the result is picked up by getRedirectResult
-        // in the effect above, not returned here.
+        // Popup rather than redirect: signInWithRedirect turned out to be unreliable in
+        // production — Google's server-side auth completed fine (the user showed up in
+        // Firebase's user list), but the browser silently failed to recall the pending
+        // sign-in across the app -> Google -> Firebase authDomain -> app round trip, with
+        // no error to act on. A popup avoids that entirely since the original tab never
+        // navigates away. The trade-off is the browser may block the popup once — if so,
+        // the user needs to allow popups for this site (a one-time permission, not a bug).
         try {
-          await signInWithRedirect(auth, new GoogleAuthProvider())
+          const result = await signInWithPopup(auth, new GoogleAuthProvider())
+          if (getAdditionalUserInfo(result)?.isNewUser) {
+            await ensureUserDoc(result.user.uid, result.user.email ?? '', result.user.displayName ?? '')
+          }
           return {}
         } catch (error) {
           return { error: errorMessage(error) }

@@ -43,9 +43,10 @@ export function LoginSignup(): React.JSX.Element {
     setGoogleSubmitting(true)
     try {
       const { error: err } = await signInWithGoogle()
-      // On success this redirects the whole page to Google, so there's nothing left
-      // to show here — this only ever runs when signInWithGoogle failed before that
-      // redirect even started (e.g. a network error).
+      // On success, onAuthStateChanged (in AuthContext) picks up the new session and the
+      // app navigates away from this screen on its own — nothing to show here for that
+      // case. This only surfaces a message when the popup itself failed (blocked,
+      // closed by the user, network error, etc.).
       if (err) setError(err)
     } finally {
       setGoogleSubmitting(false)
