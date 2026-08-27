@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs'
 import type { TimelistRow } from '@shared/domain'
 import { getHolidayName, isWeekend } from '@shared/holidays'
+import { computeHours } from '@shared/timelistGenerator'
 import { MONTH_NAMES } from './excelExport'
 
 const NAME_COLUMN = 1
@@ -125,12 +126,21 @@ export async function parseTimesheetWorkbook(buffer: ArrayBuffer): Promise<Parse
       const dateObj = new Date(`${dateStr}T00:00:00`)
       const holidayName = getHolidayName(dateObj)
 
+      const startTime = cellToTime(sheet.getCell(row, startCol).value)
+      const stopTime = cellToTime(sheet.getCell(row, stopCol).value)
+      const hoursFromCell = cellToHours(sheet.getCell(row, hoursCol).value)
+      // Trust the Hours cell if it has a real value, but fall back to computing it from
+      // Start/Stop — the source file may have had times filled in by hand with the
+      // hours column left blank, expecting it to auto-fill the way this app's own editor
+      // does when you type a start/stop time.
+      const totalHours = hoursFromCell || computeHours(startTime, stopTime)
+
       rows.push({
         date: dateStr,
         workplaceId: '', // resolved once the workplace is matched/created in Firestore
-        startTime: cellToTime(sheet.getCell(row, startCol).value),
-        stopTime: cellToTime(sheet.getCell(row, stopCol).value),
-        totalHours: cellToHours(sheet.getCell(row, hoursCol).value),
+        startTime,
+        stopTime,
+        totalHours,
         isWeekend: isWeekend(dateObj),
         isHoliday: holidayName !== null,
         holidayName
