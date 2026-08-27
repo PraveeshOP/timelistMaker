@@ -7,8 +7,7 @@ import { MONTH_NAMES } from './excelExport'
 const NAME_COLUMN = 1
 const COLS_PER_TABLE = 4
 const FIRST_DATA_ROW = 4
-const MAX_SCAN_ROW = 40 // generous upper bound covering every day-of-month row plus totals
-const MAX_WORKPLACE_GROUPS = 50 // safety cap against a malformed/huge file
+const MAX_WORKPLACE_GROUPS = 50
 
 export interface ParsedWorkplace {
   name: string
@@ -43,24 +42,24 @@ function isoDate(year: number, month: number, day: number): string {
   return `${year}-${pad2(month)}-${pad2(day)}`
 }
 
-/** Reads a cell that should hold a time-of-day. Our own export writes these as Excel
- *  date serials, which exceljs reads back as UTC-based Date objects — but a plain
- *  number is also accepted in case another tool wrote the file. */
-function cellToTime(value: ExcelJS.CellValue): string | null {
-  if (value == null) return null
-  if (value instanceof Date) {
-    return `${pad2(value.getUTCHours())}:${pad2(value.getUTCMinutes())}`
+function blankMonthRows(month: number, year: number): TimelistRow[] {
+  const rows: TimelistRow[] = []
+  for (let day = 1; day <= daysInMonth(month, year); day++) {
+    const date = isoDate(year, month, day)
+    const dateObj = new Date(`${date}T00:00:00`)
+    const holidayName = getHolidayName(dateObj)
+    rows.push({
+      date,
+      workplaceId: '',
+      startTime: null,
+      stopTime: null,
+      totalHours: 0,
+      isWeekend: isWeekend(dateObj),
+      isHoliday: holidayName !== null,
+      holidayName
+    })
   }
-  if (typeof value === 'number') {
-    const fraction = value - Math.floor(value)
-    const totalMinutes = Math.round(fraction * 1440)
-    return `${pad2(Math.floor(totalMinutes / 60))}:${pad2(totalMinutes % 60)}`
-  }
-  return null
-}
-
-function cellToHours(value: ExcelJS.CellValue): number {
-  return typeof value === 'number' ? value : 0
+  return rows
 }
 
 function cellToText(value: ExcelJS.CellValue): string {
@@ -72,10 +71,63 @@ function cellToText(value: ExcelJS.CellValue): string {
   return String(value).trim()
 }
 
-/** Reverses our own two-table(+)-side-by-side export layout back into per-workplace,
- *  per-day rows: reads the month/year from the sheet name, walks each 4-column
- *  workplace group (Start/Stopp/Antall timer/Kundenavn) starting at column B, and pulls
- *  the workplace name from the first non-blank Kundenavn cell in that group. */
+function dateFromExcelSerial(value: number): Date {
+  const wholeDays = Math.floor(value)
+  const fraction = value - wholeDays
+  const utcMs = Date.UTC(1899, 11, 30) + wholeDays * 86400000 + Math.round(fraction * 86400000)
+  return new Date(utcMs)
+}
+
+function cellToDate(value: ExcelJS.CellValue): Date | null {
+  if (value == null) return null
+  if (value instanceof Date) return value
+  if (typeof value === 'number') return dateFromExcelSerial(value)
+  return null
+}
+
+function cellToTime(value: ExcelJS.CellValue): string | null {
+  const date = cellToDate(value)
+  if (!date) return null
+  return `${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}`
+}
+
+function dateToIso(value: ExcelJS.CellValue): string | null {
+  const date = cellToDate(value)
+  if (!date) return null
+  return isoDate(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate())
+}
+
+function cellToHours(value: ExcelJS.CellValue): number {
+  if (typeof value === 'number') return value
+  if (value && typeof value === 'object' && 'result' in value) {
+    const result = (value as { result?: unknown }).result
+    return typeof result === 'number' ? result : 0
+  }
+  return 0
+}
+
+function findTotalsRow(sheet: ExcelJS.Worksheet, stopCol: number, hoursCol: number): number {
+  for (let r = FIRST_DATA_ROW; r <= Math.max(sheet.rowCount, FIRST_DATA_ROW); r++) {
+    const stopText = cellToText(sheet.getCell(r, stopCol).value).toLowerCase()
+    const hoursValue = sheet.getCell(r, hoursCol).value
+    const hasSumFormula =
+      hoursValue != null &&
+      typeof hoursValue === 'object' &&
+      'formula' in hoursValue &&
+      String((hoursValue as { formula?: unknown }).formula ?? '').toUpperCase().startsWith('SUM(')
+
+    if (stopText === 'total' || hasSumFormula) return r
+  }
+  return sheet.rowCount + 1
+}
+
+function hasTableHeader(sheet: ExcelJS.Worksheet, startCol: number): boolean {
+  return cellToText(sheet.getCell(3, startCol).value).toLowerCase() === 'start'
+}
+
+/** Reads the compact exported timesheet layout:
+ *  each workplace is a 4-column block (Start/Stopp/Antall timer/Kundenavn),
+ *  rows are compact per workplace, and dates come from the Start/Stopp cells. */
 export async function parseTimesheetWorkbook(buffer: ArrayBuffer): Promise<ParseResult> {
   const workbook = new ExcelJS.Workbook()
   try {
@@ -84,7 +136,7 @@ export async function parseTimesheetWorkbook(buffer: ArrayBuffer): Promise<Parse
     return { ok: false, error: 'This file could not be read as an Excel workbook.' }
   }
 
-  const sheet = workbook.worksheets[0]
+  const sheet = workbook.worksheets.find((ws) => parseSheetName(ws.name)) ?? workbook.worksheets[0]
   if (!sheet) return { ok: false, error: 'The workbook has no sheets.' }
 
   const parsedName = parseSheetName(sheet.name)
@@ -94,61 +146,45 @@ export async function parseTimesheetWorkbook(buffer: ArrayBuffer): Promise<Parse
       error: `Couldn't recognize "${sheet.name}" as a "Month Year" timesheet sheet (e.g. "April 2025").`
     }
   }
+
   const { month, year } = parsedName
-  const totalDays = daysInMonth(month, year)
-
   const workplaces: ParsedWorkplace[] = []
-  let groupIndex = 0
 
-  while (groupIndex < MAX_WORKPLACE_GROUPS) {
+  for (let groupIndex = 0; groupIndex < MAX_WORKPLACE_GROUPS; groupIndex++) {
     const startCol = NAME_COLUMN + 1 + groupIndex * COLS_PER_TABLE
     const stopCol = startCol + 1
     const hoursCol = startCol + 2
     const custCol = startCol + 3
 
-    const headerValue = sheet.getCell(1, startCol).value
-    if (headerValue == null || headerValue === '') break
+    if (!hasTableHeader(sheet, startCol)) break
 
+    const totalsRow = findTotalsRow(sheet, stopCol, hoursCol)
+    const rows = blankMonthRows(month, year)
     let name = ''
-    for (let r = FIRST_DATA_ROW; r <= MAX_SCAN_ROW; r++) {
-      const text = cellToText(sheet.getCell(r, custCol).value)
-      if (text) {
-        name = text
-        break
-      }
+    let sawAnyEntry = false
+
+    for (let r = FIRST_DATA_ROW; r < totalsRow; r++) {
+      const startDate = dateToIso(sheet.getCell(r, startCol).value)
+      const date = startDate ?? dateToIso(sheet.getCell(r, stopCol).value)
+      const startTime = cellToTime(sheet.getCell(r, startCol).value)
+      const stopTime = cellToTime(sheet.getCell(r, stopCol).value)
+      const workplaceName = cellToText(sheet.getCell(r, custCol).value)
+      const hoursFromCell = cellToHours(sheet.getCell(r, hoursCol).value)
+
+      if (workplaceName && !name) name = workplaceName
+      if (!date || !date.startsWith(`${year}-${pad2(month)}-`)) continue
+
+      const row = rows.find((candidate) => candidate.date === date)
+      if (!row) continue
+
+      row.startTime = startTime
+      row.stopTime = stopTime
+      row.totalHours = hoursFromCell || computeHours(startTime, stopTime)
+      sawAnyEntry = true
     }
+
     if (!name) name = `Workplace ${groupIndex + 1}`
-
-    const rows: TimelistRow[] = []
-    for (let day = 1; day <= totalDays; day++) {
-      const row = day + 3
-      const dateStr = isoDate(year, month, day)
-      const dateObj = new Date(`${dateStr}T00:00:00`)
-      const holidayName = getHolidayName(dateObj)
-
-      const startTime = cellToTime(sheet.getCell(row, startCol).value)
-      const stopTime = cellToTime(sheet.getCell(row, stopCol).value)
-      const hoursFromCell = cellToHours(sheet.getCell(row, hoursCol).value)
-      // Trust the Hours cell if it has a real value, but fall back to computing it from
-      // Start/Stop — the source file may have had times filled in by hand with the
-      // hours column left blank, expecting it to auto-fill the way this app's own editor
-      // does when you type a start/stop time.
-      const totalHours = hoursFromCell || computeHours(startTime, stopTime)
-
-      rows.push({
-        date: dateStr,
-        workplaceId: '', // resolved once the workplace is matched/created in Firestore
-        startTime,
-        stopTime,
-        totalHours,
-        isWeekend: isWeekend(dateObj),
-        isHoliday: holidayName !== null,
-        holidayName
-      })
-    }
-
-    workplaces.push({ name, rows })
-    groupIndex += 1
+    if (sawAnyEntry || name) workplaces.push({ name, rows })
   }
 
   if (workplaces.length === 0) {
