@@ -66,6 +66,7 @@ export function LoginSignup(): React.JSX.Element {
             <Input
               type="text"
               placeholder="Full name"
+              autoComplete="name"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
@@ -74,6 +75,7 @@ export function LoginSignup(): React.JSX.Element {
           <Input
             type="email"
             placeholder="Email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -81,6 +83,7 @@ export function LoginSignup(): React.JSX.Element {
           <Input
             type="password"
             placeholder="Password"
+            autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             minLength={6}
