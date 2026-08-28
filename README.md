@@ -69,6 +69,16 @@ app will actually be served from:
 - `your-app.vercel.app` (production, once deployed)
 - any Vercel preview-deployment domain pattern you want to support
 
+**A note on `signInWithPopup` vs. `signInWithRedirect`:** this app deliberately uses the
+popup flow. `signInWithRedirect` was tried first and turned out to be unreliable in
+production — the sign-in genuinely completed on Firebase's side, but some browsers
+silently failed to recall the pending session across the multi-domain round trip (app →
+Google → Firebase's `authDomain` → app), with no error to act on. The popup avoids that
+class of problem entirely, at the cost of needing the browser to allow it. Privacy-
+focused browsers (Brave with Shields, in particular) can block the popup outright —
+`AuthContext.tsx`'s `googleSignInErrorMessage` surfaces a specific, actionable message
+for that case rather than Firebase's raw error string.
+
 ## 3. Running in development
 
 ```bash

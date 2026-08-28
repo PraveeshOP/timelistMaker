@@ -55,6 +55,27 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function errorCode(error: unknown): string | null {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return error.code
+  }
+  return null
+}
+
+/** Firebase's raw messages for these two are cryptic ("Firebase: Error
+ *  (auth/popup-blocked)."), and both have a genuinely helpful, actionable fix — worth
+ *  surfacing directly instead of the generic error string. */
+function googleSignInErrorMessage(error: unknown): string {
+  switch (errorCode(error)) {
+    case 'auth/popup-blocked':
+      return "Your browser blocked the Google sign-in popup. Look for a blocked-popup icon in the address bar and choose \"Always allow\" for this site (in privacy-focused browsers like Brave, you may also need to lower Shields for this site), then try again."
+    case 'auth/popup-closed-by-user':
+      return 'The Google sign-in window was closed before finishing. Please try again.'
+    default:
+      return errorMessage(error)
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [user, setUser] = useState<AppUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -107,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
           }
           return {}
         } catch (error) {
-          return { error: errorMessage(error) }
+          return { error: googleSignInErrorMessage(error) }
         }
       },
       async signOut() {
